@@ -31,8 +31,6 @@ knowledge_agent = Agent(
 @knowledge_agent.tool
 async def retrieve_knowledge(ctx: RunContext[KnowledgeDependencies]) -> KnowledgeResult:
     
-    # For this example, we'll simulate knowledge retrieval with the LLM
-    
     prompt = f"""
     Retrieve relevant knowledge to help answer this customer query:
     

@@ -1,6 +1,6 @@
 from pydantic_ai import Agent, RunContext
 from dataclasses import dataclass
-from models.support import OrderInfo
+from models.order import OrderInfo
 from config import MODEL_NAME
 
 @dataclass

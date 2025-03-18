@@ -1,5 +1,4 @@
 from typing import Dict, List, Any
-from models.conversation import ConversationState
 from pydantic_ai.messages import ModelMessage, UserMessage
 
 class HumanHandoffManager:

@@ -13,7 +13,7 @@ class MessageHistoryManager:
         timestamp = int(time.time())
         filename = f"{customer_id}_{timestamp}.json"
         filepath = os.path.join(self.storage_dir, filename)
-        
+
         serialized_conversation = []
         for message in conversation:
             if isinstance(message, UserMessage):

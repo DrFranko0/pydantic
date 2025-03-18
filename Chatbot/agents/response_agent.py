@@ -2,7 +2,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ModelMessage
 from dataclasses import dataclass
 from typing import List, Dict
-from models.conversation import Result
+from models.conversation import ResponseGenerationResult
 from config import MODEL_NAME
 
 @dataclass
@@ -16,7 +16,7 @@ class ResponseDependencies:
 response_agent = Agent(
     f"gemini:{MODEL_NAME}",
     deps_type=ResponseDependencies,
-    result_type=Result,
+    result_type=ResponseGenerationResult,
     system_prompt="""
     You are a helpful customer support assistant. Your goal is to provide clear, 
     accurate, and helpful responses to customer inquiries.
@@ -34,10 +34,7 @@ response_agent = Agent(
 )
 
 @response_agent.tool
-async def generate_response(ctx: RunContext[ResponseDependencies]) -> Result:
-    """Generate a response to the customer based on the conversation context"""
-    
-    # Prepare a prompt with all the context
+async def generate_response(ctx: RunContext[ResponseDependencies]) -> ResponseGenerationResult:
     prompt = f"""
     Based on the conversation history and detected intent, generate a helpful response.
     
@@ -50,7 +47,6 @@ async def generate_response(ctx: RunContext[ResponseDependencies]) -> Result:
     Generate a helpful, accurate response addressing the customer's needs.
     """
     
-    # Use the agent's LLM to generate the response
     result = await response_agent.run(prompt, message_history=ctx.deps.conversation_history)
     
     return result.data

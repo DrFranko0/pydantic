@@ -5,16 +5,16 @@ from pydantic_ai.messages import ModelMessage
 
 class Entity(BaseModel):
     name: str = Field(description="Name of the entity identified in the conversation")
-    type_name: str = Field(description="Type of entity (e.g., product, order_number, date)")
+    type: str = Field(description="Type of entity (e.g., product, order_number, date)")
     value: str = Field(description="Value of the entity")
 
-class Sentiment(BaseModel):
+class IntentAnalysisResult(BaseModel):
     intent: str = Field(description="Primary user intent")
     entities: List[Entity] = Field(default_factory=list, description="Entities extracted from the message")
     sentiment: float = Field(description="Sentiment score (-1 to 1, negative to positive)")
     confidence: float = Field(description="Confidence score for intent detection (0-1)")
 
-class Result(BaseModel):
+class ResponseGenerationResult(BaseModel):
     response: str = Field(description="Response to the user's query")
     needs_human: bool = Field(default=False, description="Whether the query needs human attention")
     suggested_actions: List[str] = Field(default_factory=list, description="Suggested actions for the user or agent")

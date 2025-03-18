@@ -26,8 +26,6 @@ sentiment_agent = Agent(
 
 @sentiment_agent.tool
 async def analyze_sentiment(ctx: RunContext[SentimentDependencies]) -> SentimentResult:
-    """Analyze the sentiment of a customer message"""
-    # This is a simple wrapper around the LLM's capabilities
     result = await sentiment_agent.run(
         f"Analyze the sentiment of this customer message: {ctx.deps.message}"
     )

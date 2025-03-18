@@ -1,6 +1,6 @@
 from pydantic_ai import Agent, RunContext
 from dataclasses import dataclass
-from models.support import ProductInfo
+from models.order import ProductInfo
 from typing import Optional
 from config import MODEL_NAME
 
@@ -9,7 +9,6 @@ class ProductLookupDependencies:
     product_id: Optional[str] = None
     product_name: Optional[str] = None
 
-# For this example, we're using a simulated database with the LLM
 product_lookup_tool = Agent(
     f"gemini:{MODEL_NAME}",
     deps_type=ProductLookupDependencies,
@@ -29,7 +28,6 @@ product_lookup_tool = Agent(
 
 @product_lookup_tool.tool
 async def lookup_product(ctx: RunContext[ProductLookupDependencies]) -> ProductInfo:
-    """Look up product information by ID or name"""
     
     prompt = "Look up product information for "
     

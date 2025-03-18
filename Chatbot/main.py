@@ -1,11 +1,13 @@
 import asyncio
 import typer
-from typing import List, Dict, Any
 import os
+from dotenv import load_dotenv
 
 from graph.workflow import ConversationGraph
 from utils.message_history import MessageHistoryManager
 from utils.human_handoff import HumanHandoffManager
+
+load_dotenv()
 
 app = typer.Typer()
 history_manager = MessageHistoryManager()
@@ -26,17 +28,14 @@ def chat(customer_id: str = typer.Option("C12345", help="Customer ID")):
         if user_input.lower() == "exit":
             break
         
-        if not conversation.get_conversation_history():
-            result = asyncio.run(conversation.start_conversation(user_input))
-        else:
-            result = asyncio.run(conversation.continue_conversation(user_input))
+        result = asyncio.run(conversation.process_message(user_input))
         
         if result.get("needs_human", False):
             typer.echo("\nConversation has been escalated to a human agent.")
             handoff_id = handoff_manager.queue_handoff(customer_id, result)
             typer.echo(f"Handoff ID: {handoff_id}")
             break
-        
+  
         if result.get("resolved", False):
             typer.echo("\nThe conversation has been resolved.")
             break
