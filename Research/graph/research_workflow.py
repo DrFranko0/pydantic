@@ -1,10 +1,50 @@
+from dataclasses import dataclass, field
+from typing import List, Optional
+from pydantic_graph import BaseNode, GraphRunContext, Edge, End
+
+from models.research_state import ResearchState, Finding, ReportSection, Reference
+
+@dataclass
+class GenerateQuestions(BaseNode[ResearchState]):
+    async def run(self, ctx: GraphRunContext[ResearchState]) -> "ResearchQuestions | End[str]":
+        if ctx.state.questions:
+            return ResearchQuestions(question_index=0)
+            
+        result = await ctx.deps["question_agent"].run(
+            f"Generate 5 key research questions about: {ctx.state.topic}",
+            message_history=ctx.state.agent_memory
+        )
+        
+        ctx.state.agent_memory += result.all_messages()
+        ctx.state.questions = result.data.questions
+        
+        if not ctx.state.questions:
+            return End("Failed to generate research questions")
+            
+        return ResearchQuestions(question_index=0)
+
+@dataclass
+class ResearchQuestions(BaseNode[ResearchState]):
+    question_index: int
+    
+    async def run(self, ctx: GraphRunContext[ResearchState]) -> "GenerateSearchQueries | SynthesizeFindings":
+        if self.question_index >= len(ctx.state.questions):
+            return SynthesizeFindings()
+            
+        current_question = ctx.state.questions[self.question_index]
+        
+
+        if current_question not in ctx.state.findings:
+            ctx.state.findings[current_question] = []
+            
+        return GenerateSearchQueries(question=current_question)
+
 @dataclass
 class GenerateSearchQueries(BaseNode[ResearchState]):
     question: str
     
-    async def run(self, ctx: GraphRunContext[ResearchState]) -> "ExecuteSearch":
-        # Generate search queries for the question
-        result = await search_agent.run(
+    async def run(self, ctx: GraphRunContext[ResearchState]) -> "ExecuteSearch | ResearchQuestions":
+        result = await ctx.deps["search_agent"].run(
             f"Generate effective search queries for the research question: {self.question}",
             message_history=ctx.state.agent_memory
         )
@@ -14,7 +54,8 @@ class GenerateSearchQueries(BaseNode[ResearchState]):
         
         if not search_queries:
             # If no queries were generated, move to the next question
-            return ResearchQuestions(question_index=self.question_index + 1)
+            question_index = next((i for i, q in enumerate(ctx.state.questions) if q == self.question), 0) + 1
+            return ResearchQuestions(question_index=question_index)
         
         return ExecuteSearch(question=self.question, queries=search_queries, query_index=0)
 
@@ -25,18 +66,14 @@ class ExecuteSearch(BaseNode[ResearchState]):
     query_index: int
     
     async def run(self, ctx: GraphRunContext[ResearchState]) -> "AnalyzeSearchResults | ResearchQuestions":
-        # Check if we've processed all queries
         if self.query_index >= len(self.queries):
-            # Move to the next question
             question_index = next((i for i, q in enumerate(ctx.state.questions) if q == self.question), 0) + 1
             return ResearchQuestions(question_index=question_index)
         
-        # Execute the current search query
         current_query = self.queries[self.query_index]
-        search_results = web_search.search(current_query)
+        search_results = ctx.deps["web_search"].search(current_query)
         
         if not search_results:
-            # If no results, try the next query
             return ExecuteSearch(
                 question=self.question, 
                 queries=self.queries, 
@@ -60,7 +97,6 @@ class AnalyzeSearchResults(BaseNode[ResearchState]):
     result_index: int
     
     async def run(self, ctx: GraphRunContext[ResearchState]) -> "AnalyzeSearchResults | ExecuteSearch":
-        # Check if we've processed all search results
         if self.result_index >= len(self.search_results):
             # Move to the next query
             return ExecuteSearch(
@@ -69,14 +105,11 @@ class AnalyzeSearchResults(BaseNode[ResearchState]):
                 query_index=self.query_index + 1
             )
         
-        # Get the current search result
         current_result = self.search_results[self.result_index]
         
-        # Extract content from the URL
-        content = content_extractor.extract_content(current_result.url)
+        content = ctx.deps["content_extractor"].extract_content(current_result.url)
         
         if not content or len(content) < 100:
-            # If content extraction failed or yielded too little content, skip to the next result
             return AnalyzeSearchResults(
                 question=self.question,
                 queries=self.queries,
@@ -85,37 +118,31 @@ class AnalyzeSearchResults(BaseNode[ResearchState]):
                 result_index=self.result_index + 1
             )
         
-        # Analyze the content
         analysis_prompt = (
             f"Research Question: {self.question}\n\n"
             f"Content from {current_result.url}:\n\n{content[:5000]}..."
         )
         
-        analysis_result = await analysis_agent.run(
+        analysis_result = await ctx.deps["analysis_agent"].run(
             analysis_prompt,
             message_history=ctx.state.agent_memory
         )
         
         ctx.state.agent_memory += analysis_result.all_messages()
         
-        # Store findings
         if analysis_result.data.findings:
-            # Add source information to findings
             for finding in analysis_result.data.findings:
                 finding.source_url = current_result.url
                 ctx.state.findings[self.question].append(finding)
             
-            # Add a citation
-            citation = citation_generator.generate_citation(
+            citation = ctx.deps["citation_generator"].generate_citation(
                 title=current_result.title,
                 url=current_result.url
             )
             
-            # Check if this reference already exists
             if not any(ref.url == citation.url for ref in ctx.state.references):
                 ctx.state.references.append(citation)
         
-        # Move to the next result
         return AnalyzeSearchResults(
             question=self.question,
             queries=self.queries,
@@ -127,7 +154,6 @@ class AnalyzeSearchResults(BaseNode[ResearchState]):
 @dataclass
 class SynthesizeFindings(BaseNode[ResearchState]):
     async def run(self, ctx: GraphRunContext[ResearchState]) -> "GenerateReport | End[str]":
-        # Check if we have any findings
         all_findings = []
         for question, findings in ctx.state.findings.items():
             all_findings.extend(findings)
@@ -135,7 +161,6 @@ class SynthesizeFindings(BaseNode[ResearchState]):
         if not all_findings:
             return End("No relevant findings were discovered during research")
         
-        # Prepare synthesis input
         findings_by_question = {}
         for question, findings in ctx.state.findings.items():
             findings_by_question[question] = [
@@ -143,8 +168,7 @@ class SynthesizeFindings(BaseNode[ResearchState]):
                 for finding in findings
             ]
         
-        # Synthesize findings into report sections
-        synthesis_result = await synthesis_agent.run(
+        synthesis_result = await ctx.deps["synthesis_agent"].run(
             f"Synthesize the following research findings on '{ctx.state.topic}':\n{findings_by_question}",
             message_history=ctx.state.agent_memory
         )
@@ -157,7 +181,7 @@ class SynthesizeFindings(BaseNode[ResearchState]):
 @dataclass
 class GenerateReport(BaseNode[ResearchState]):
     async def run(self, ctx: GraphRunContext[ResearchState]) -> End[str]:
-        # Convert state objects to report schema objects
+        
         report_sections = [
             {
                 "title": section.title,
@@ -182,7 +206,7 @@ class GenerateReport(BaseNode[ResearchState]):
         ]
         
         # Generate the report
-        report_result = await report_agent.run(
+        report_result = await ctx.deps["report_agent"].run(
             f"Generate a research report on '{ctx.state.topic}' using the following sections and references:\n" +
             f"Sections: {report_sections}\n" +
             f"References: {references}",
@@ -191,7 +215,6 @@ class GenerateReport(BaseNode[ResearchState]):
         
         ctx.state.agent_memory += report_result.all_messages()
         
-        # Format the report as markdown
         report_data = report_result.data
         
         markdown_report = f"# Research Report: {ctx.state.topic}\n\n"
@@ -202,6 +225,6 @@ class GenerateReport(BaseNode[ResearchState]):
         
         markdown_report += "## References\n\n"
         for i, reference in enumerate(report_data.references, 1):
-            markdown_report += f"{i}. {citation_generator.format_apa_citation(reference)}\n"
+            markdown_report += f"{i}. {ctx.deps['citation_generator'].format_apa_citation(reference)}\n"
         
         return End(markdown_report)

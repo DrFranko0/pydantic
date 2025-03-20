@@ -1,1 +1,8 @@
 .env
+
+reports/
+
+*.log
+logs/
+
+.logfire

@@ -1,0 +1,2 @@
+trafilatura
+pydantic_ai
